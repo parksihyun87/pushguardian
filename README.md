@@ -152,4 +152,5 @@ load_config → scope_classify → hard_policy_check → soft_llm_judge
 - `report_md`: 마크다운 리포트
 - `report_path`: 저장된 리포트 파일 경로
 
-**LangGraph, Streamlit으로 만든 오픈소스 프로젝트**
+
+### **LangGraph, Streamlit으로 만든 오픈소스 프로젝트**
