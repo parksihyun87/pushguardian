@@ -70,6 +70,9 @@ class GuardianState(TypedDict):
     #llm 플래너 출력
     research_plan: dict | None
 
+    # LangSmith trace URL (if tracing enabled)
+    langsmith_url: str | None
+
 # Node functions
 def load_config_node(state: GuardianState) -> GuardianState:
     """Load configuration."""
@@ -93,6 +96,7 @@ def load_config_node(state: GuardianState) -> GuardianState:
     state.setdefault("report_md", "")
     state.setdefault("report_path", None)
     state.setdefault("errors", [])
+    state.setdefault("langsmith_url", None)
 
     # Now try to load config
     try:
@@ -312,7 +316,8 @@ def observation_validate_node(state: GuardianState) -> GuardianState:
     )
 
     state["research_plan"] = plan
-    state["evidence"].notes += f" | Observation: {observation.get('notes', 'N/A')} | Plan: {plan['reasoning']}"
+    # Format notes with bullet points and line breaks for better readability
+    state["evidence"].notes += f"\n\n* Observation: {observation.get('notes', 'N/A')}\n\n* Plan: {plan['reasoning']}"
     return state
 
 def write_report_node(state: GuardianState) -> GuardianState:
@@ -475,6 +480,9 @@ def run_guardian_stream(diff_text: str, mode: Literal["cli", "web"] = "cli", rep
         for node_name, state in run_guardian_stream(diff):
             print(f"Running: {node_name}")
     """
+    import os
+    from langsmith import traceable
+
     graph = build_graph()
 
     initial_state = {
@@ -483,7 +491,19 @@ def run_guardian_stream(diff_text: str, mode: Literal["cli", "web"] = "cli", rep
         "repo_root": repo_root,
     }
 
+    # Set LangSmith project URL if tracing is enabled
+    langsmith_enabled = os.getenv("LANGCHAIN_TRACING_V2") == "true"
+    if langsmith_enabled:
+        # Link to all projects page (since we don't have project UUID)
+        langsmith_url = "https://smith.langchain.com/projects"
+    else:
+        langsmith_url = None
+
     for chunk in graph.stream(initial_state):
         # chunk is a dict like {"node_name": state}
         for node_name, state in chunk.items():
+            # Add LangSmith URL to state
+            if langsmith_url:
+                state["langsmith_url"] = langsmith_url
+
             yield node_name, state

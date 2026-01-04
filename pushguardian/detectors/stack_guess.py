@@ -36,9 +36,10 @@ STACK_INDICATORS = {
         "files": ["Dockerfile", "docker-compose.yml", "docker-compose.yaml"],
     },
     "kubernetes": {
-        "extensions": [".yaml", ".yml"],
-        "paths": ["k8s/", "kubernetes/", "manifests/"],
-        "files": [],
+        "extensions": [],  # Removed generic .yml to avoid false positives with docker-compose
+        "paths": ["k8s/", "kubernetes/", "manifests/", ".kube/"],
+        "files": ["deployment.yaml", "deployment.yml", "service.yaml", "service.yml",
+                  "configmap.yaml", "configmap.yml", "ingress.yaml", "ingress.yml"],
     },
     "nextjs": {
         "extensions": [".tsx", ".ts", ".jsx"],

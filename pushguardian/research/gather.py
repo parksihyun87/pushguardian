@@ -121,18 +121,19 @@ def gather_research(
 
     # Query for weak stack learning
     if weak_stack_touched:
-        stack = weak_stack_touched[0]  # Take first weak stack
-
         # If we have specific learning points from LLM, use them for targeted search
         if learning_points:
             for lp in learning_points[:2]:  # Top 2 learning points
+                # Use the stack from learning point (LLM判断), not from weak_stack_touched
+                lp_stack = lp.get("stack", weak_stack_touched[0])
                 concept = lp.get("concept", "")
                 if concept:
-                    query = f"{stack} {concept} tutorial examples"
+                    query = f"{lp_stack} {concept} tutorial examples"
                     queries.append(("learning", query))
                     evidence.search_queries.append(query)
         else:
             # Fallback to generic learning query
+            stack = weak_stack_touched[0]  # Take first weak stack
             query = f"{stack} beginner tutorial best practices examples"
             queries.append(("learning", query))
             evidence.search_queries.append(query)

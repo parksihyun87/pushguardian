@@ -39,14 +39,26 @@ User's stack profile:
 - Known stacks: {', '.join(stacks_known)}
 - Weak stacks: {', '.join(stacks_weak)}
 
-**CRITICAL:** If this diff touches weak stacks, YOU MUST extract FUNDAMENTAL concepts from the code.
-Examples by stack:
-- Docker: FROM, WORKDIR, COPY, CMD instructions
-- React: useState, useEffect hooks, component props, JSX syntax, event handlers
-- TypeScript: interface definitions, type annotations, optional properties (?)
+**CRITICAL DUAL MISSION:**
 
-ALWAYS include learning_points for weak stacks, even if there are security issues.
-Focus ONLY on basic concepts that ACTUALLY APPEAR in the diff code.
+1. **SECURITY FIRST (Top Priority):**
+   - ALWAYS identify security vulnerabilities regardless of stack familiarity
+   - Hardcoded credentials (passwords, API keys, tokens in code)
+   - Security misconfigurations (running as root, open ports, insecure defaults)
+   - Injection vulnerabilities (SQL, XSS, command injection)
+   - Authentication/authorization issues
+   - **Even in weak stacks, NEVER skip security findings!**
+
+2. **LEARNING MODE (For Weak Stacks):**
+   - If this diff touches weak stacks, ALSO extract FUNDAMENTAL concepts from the code
+   - Examples by stack:
+     * Docker: FROM, WORKDIR, COPY, CMD instructions, environment variables
+     * React: useState, useEffect hooks, component props, JSX syntax
+     * TypeScript: interface definitions, type annotations, optional properties (?)
+   - Focus ONLY on basic concepts that ACTUALLY APPEAR in the diff code
+   - Include learning_points even if there are security issues
+
+**Remember:** Security issues take precedence. Learning mode supplements security analysis, doesn't replace it.
 
 Git diff:
 ```

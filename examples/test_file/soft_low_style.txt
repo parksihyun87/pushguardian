@@ -1,0 +1,21 @@
+diff --git a/app/utils/formatter.py b/app/utils/formatter.py
+index 1111111..2222222 100644
+--- a/app/utils/formatter.py
++++ b/app/utils/formatter.py
+@@ -5,10 +5,12 @@ from datetime import datetime
+ def format_date(date_obj):
+     """Format a date object to string."""
+-    return date_obj.strftime("%Y-%m-%d")
++    # Added ISO 8601 format for better internationalization
++    return date_obj.strftime("%Y-%m-%dT%H:%M:%S")
+
+
+ def calculate_total(items):
+-    total = 0
+-    for item in items:
+-        total += item.price
+-    return total
++    """Calculate total price from items list."""
++    # Refactored to use sum() for better readability
++    # Performance improvement for large lists
++    return sum(item.price for item in items)

@@ -1,6 +1,7 @@
 """Streamlit frontend for PushGuardian (alternative to FastAPI HTML)."""
 
 import streamlit as st
+from pathlib import Path
 from pushguardian.graph import run_guardian_stream
 
 st.set_page_config(page_title="PushGuardian", page_icon="🛡️", layout="wide")
@@ -13,14 +14,41 @@ Upload a diff file or paste the diff text below.
 """
 )
 
+# Example files mapping
+EXAMPLE_FILES = {
+    "-- Select an example --": None,
+    "🚨 Hard Block (Critical Security)": "examples/test_file/block.txt",
+    "🟠 Medium Risk (LLM Soft Judge)": "examples/test_file/soft_medium_xss.txt",
+    "🟡 Low Risk (Code Style/Performance)": "examples/test_file/soft_low_style.txt",
+    "📖 Weak Stack (Learning Mode)": "examples/test_file/weak_stack_docker.txt",
+    "✅ Clean Code (Should Pass)": "examples/test_file/pass.txt",
+}
+
 # Input method selection
 input_method = st.radio("Input Method", ["Paste Diff Text", "Upload Diff File"])
 
+# Example selector (only for "Paste Diff Text" mode)
 diff_text = None
-
 if input_method == "Paste Diff Text":
+    st.markdown("**Quick Test:** Load an example diff to see how PushGuardian works")
+    example_choice = st.selectbox(
+        "Load Example",
+        options=list(EXAMPLE_FILES.keys()),
+        help="Select an example to automatically load into the text area below"
+    )
+
+    # Load example file if selected
+    example_content = ""
+    if example_choice != "-- Select an example --":
+        example_path = Path(EXAMPLE_FILES[example_choice])
+        if example_path.exists():
+            example_content = example_path.read_text(encoding="utf-8")
+        else:
+            st.warning(f"⚠️ Example file not found: {example_path}")
+
     diff_text = st.text_area(
         "Git Diff",
+        value=example_content,
         height=300,
         placeholder="Paste your git diff output here...",
         help="Use: git diff HEAD~1 HEAD",
@@ -62,7 +90,7 @@ if st.button("🔍 Analyze Diff", type="primary"):
 
                 # Display current node
                 friendly_name = NODE_NAMES.get(node_name, f"Processing {node_name}")
-                progress_placeholder.info(f"🔄 **{friendly_name}**")
+                progress_placeholder.info(f"⏳ Loading... {friendly_name}")
 
             # Clear progress indicator
             progress_placeholder.empty()
@@ -129,6 +157,13 @@ if st.button("🔍 Analyze Diff", type="primary"):
 
                 # Developer debug info
                 with st.expander("🔧 Developer Debug Info"):
+                    # LangSmith Trace Link (if available)
+                    if state.get("langsmith_url"):
+                        st.markdown("### 🔗 LangSmith Debugging (Private)")
+                        st.info("⚠️ View detailed LangGraph execution traces in LangSmith. You must be logged in with your LangSmith account.")
+                        st.markdown(f"[Open Your LangSmith Projects]({state['langsmith_url']}) → Find 'pushguardian' project")
+                        st.divider()
+
                     st.markdown("### 📊 Research Summary")
                     col1, col2, col3 = st.columns(3)
                     with col1:
@@ -159,7 +194,7 @@ if st.button("🔍 Analyze Diff", type="primary"):
                     else:
                         st.info("No LLM observations recorded")
 
-                    st.markdown("### 📝 Internal Notes")
+                    st.markdown("### 📝 Internal Notes(Agent's ReAct thought)")
                     if state["evidence"].notes:
                         st.text_area("Research notes", state["evidence"].notes, height=150, disabled=True, key="internal_notes")
                     else:
