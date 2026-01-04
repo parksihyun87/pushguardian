@@ -96,6 +96,9 @@ pushguardian/
 단위 테스트 실행:
 pytest tests/ -v
 
+## 🧪 디버깅
+UI를 통해 검색 query문, iteration, langsmith로 trace 확인 및 공부
+
 ## 📊 LangGraph 워크플로우
 
 ```
