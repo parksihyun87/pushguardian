@@ -1,0 +1,71 @@
+version: 1
+
+# 저장 경로: repo 밖으로 (reset에도 보존)
+# Windows: %USERPROFILE%는 자동으로 확장됩니다
+report_dir: "%USERPROFILE%\\Documents\\PushGuardian\\reports"
+override_dir: "%USERPROFILE%\\Documents\\PushGuardian\\overrides"
+
+# 최근 N 커밋에서만 "언제부터" 추정
+history_scan_commits: 5
+
+# 내가 할 수 있는/약한 스택 (학습 링크 트리거)
+# 사용자가 자유롭게 수정 가능
+stacks_known:
+  - python
+  - fastapi
+  - git
+  - langchain
+
+stacks_weak:
+  - react
+  - typescript
+  - docker
+  - kubernetes
+  - nextjs
+
+# Hard abort: 파일/문자열 패턴
+hard_abort:
+  file_patterns:
+    - ".env"
+    - ".env.*"
+    - "*.pem"
+    - "*.key"
+    - "id_rsa"
+    - "id_rsa.*"
+    - "*serviceAccount*.json"
+    - "credentials.json"
+    - "*.p12"
+  secret_patterns:
+    - "sk-"
+    - "AKIA"
+    - "BEGIN PRIVATE KEY"
+    - "BEGIN RSA PRIVATE KEY"
+    - "xoxb-"
+    - "ghp_"
+    - "gho_"
+    - "github_pat_"
+    - "Bearer eyJ"
+
+# Soft checks (LLM judge)
+soft_checks:
+  - name: "dto_schema_bypass"
+    description: "DTO/Schema 규약 무시 가능성 (예: controller에서 request body를 바로 map/string으로 처리)"
+  - name: "dependency_risk"
+    description: "새로운 의존성 추가/버전 급변"
+  - name: "permission_risk"
+    description: "권한 관련 파일/정책 변경"
+
+# Research 설정
+research:
+  max_loops: 2         # Tavily -> Serper (최대 2회)
+  require_categories:
+    - "principle"      # 원리/베스트프랙티스 문서 1개
+    - "example"        # 쉬운 예시/튜토리얼 1개
+  insufficient_rules:
+    - "not_enough_links"
+    - "missing_categories"
+    - "low_relevance"
+
+# UI 설정
+ui:
+  show_markdown_in_terminal: true

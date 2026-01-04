@@ -1,0 +1,7 @@
+diff --git a/.env b/.env
+new file mode 100644
+--- /dev/null
++++ b/.env
+@@ -0,0 +1,2 @@
++OPENAI_API_KEY=sk-proj-1234567890abcdef
++DATABASE_PASSWORD=super-secret-password

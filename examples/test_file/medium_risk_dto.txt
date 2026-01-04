@@ -1,0 +1,21 @@
+diff --git a/backend/api/user_controller.py b/backend/api/user_controller.py
+index abc1234..def5678 100644
+--- a/backend/api/user_controller.py
++++ b/backend/api/user_controller.py
+@@ -10,6 +10,15 @@ class UserController:
+         users = db.query(User).all()
+         return jsonify([u.to_dict() for u in users])
+
++    @app.route('/api/user/create', methods=['POST'])
++    def create_user():
++        # TODO: Add validation
++        data = request.json
++        user = User(
++            username=data['username'],
++            email=data['email'],
++            role=data.get('role', 'user')
++        )
++        db.session.add(user)
++        db.session.commit()
++        return jsonify(user.to_dict()), 201
+-    # Placeholder for future endpoints
