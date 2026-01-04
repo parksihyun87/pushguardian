@@ -137,6 +137,7 @@ def hard_policy_check_node(state: GuardianState) -> GuardianState:
     diff_text = state["diff_text"]
     changed_files = state["changed_files"]
     config = state["config"]
+    repo_root = state.get("repo_root")
 
     hard_abort = config.get("hard_abort", {})
     secret_patterns = hard_abort.get("secret_patterns", [])
@@ -157,6 +158,70 @@ def hard_policy_check_node(state: GuardianState) -> GuardianState:
         state["decision"] = "block"
         state["severity"] = "critical"
         state["risk_score"] = 1.0
+
+        # Scan history for when this issue first appeared (only in CLI mode)
+        if repo_root and state.get("mode") == "cli":
+            from .git_ops import scan_history_for_first_appearance
+            import subprocess
+
+            max_commits = config.get("history_scan_commits", 5)
+
+            # Try to scan git history for when files were added
+            file_findings_count = len([f for f in hard_findings if f.kind == "file"])
+
+            if file_findings_count > 0:
+                # For file findings, check when the file was added to git
+                for finding in hard_findings:
+                    if finding.kind == "file":
+                        # Extract filename from detail "File: .env"
+                        filename = finding.detail.replace("File: ", "").strip()
+
+                        # Check git log for this file
+                        cmd = ["git", "log", f"-{max_commits}", "--oneline", "--", filename]
+                        result = subprocess.run(
+                            cmd, capture_output=True, text=True, cwd=repo_root, encoding="utf-8"
+                        )
+
+                        if result.returncode == 0 and result.stdout.strip():
+                            commits = result.stdout.strip().split('\n')
+                            first_commit = commits[-1].split()[0]  # Get oldest commit SHA
+
+                            state["history_hint"] = {
+                                "first_seen_commit": first_commit,
+                                "message": f"⚠️ The file '{filename}' was added {len(commits)} commit(s) ago (scanned last {max_commits} commits).",
+                                "scanned_commits": max_commits
+                            }
+                            break  # Only need one
+                        else:
+                            # File is being added in this commit
+                            state["history_hint"] = {
+                                "message": f"The file '{filename}' is being added in this commit (new addition).",
+                                "scanned_commits": 0
+                            }
+                            break
+            else:
+                # For secret findings, try to extract the actual secret line
+                added_lines = []
+                for finding in hard_findings:
+                    if finding.kind == "secret" and finding.detail:
+                        # Extract line from detail
+                        lines = [line.strip() for line in finding.detail.split('\n') if line.strip() and not line.startswith('Found')]
+                        added_lines.extend(lines[:3])  # Top 3 lines per finding
+
+                if added_lines:
+                    first_commit = scan_history_for_first_appearance(repo_root, added_lines, max_commits)
+
+                    if first_commit:
+                        state["history_hint"] = {
+                            "first_seen_commit": first_commit[:8],
+                            "message": f"⚠️ This secret was first introduced approximately {max_commits} commits ago.",
+                            "scanned_commits": max_commits
+                        }
+                    else:
+                        state["history_hint"] = {
+                            "message": f"This secret appears to be new (not found in the last {max_commits} commits).",
+                            "scanned_commits": max_commits
+                        }
 
     return state
 

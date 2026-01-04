@@ -46,7 +46,7 @@ hard_abort:
     - "github_pat_"
     - "Bearer eyJ"
 
-# Soft checks (LLM judge)
+# Soft checks (LLM judge) 기본 약한 설정(그외는 알아서 찾도록 프롬프팅)
 soft_checks:
   - name: "dto_schema_bypass"
     description: "DTO/Schema 규약 무시 가능성 (예: controller에서 request body를 바로 map/string으로 처리)"

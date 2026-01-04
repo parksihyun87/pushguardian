@@ -1,189 +1,154 @@
 # 🛡️ PushGuardian
 
-> **Git Pre-Push Security & Best-Practice Analyzer powered by LangGraph**
+> **LangGraph 기반 Git Pre-Push 보안 & 적절한 학습 예제 시스템**
 
-PushGuardian automatically detects security risks, credential leaks, and architectural violations **before** you push to remote. Built with LangGraph for intelligent multi-step analysis.
+## 기획 목적
+git을 사용하면서 팀 협업을 하다 보면 커서나 클로드 코드를 통해 api key나 id/pw가 들어간 코딩을 할 때가 있습니다. 이럴시 해당 커밋들을 지워야 합니다.
+또한 각자가 배운 기술이 달라 누군가는 특정 기술스택의 학습에 대해 약한 부분이 있는데 개발에 급급해 근본적인 학습을 서로 시켜줄 시간이 부족합니다.
+해당 부분에 대하여 생각하게 되면서 본 시스템을 작성하게 되었습니다.
 
-## 🎯 Features
+## 기능 개요
+PushGuardian은 원격 저장소에 push하기 전에 보안 위험, 인증 정보 유출, 아키텍처 위반을 자동으로 감지합니다. 
+또한 단순히 막기만 하거나 위험성 경고를 넘어서서, 에이전트가 적절성을 평가한 인터넷 문서 링크를 참고하여 근본적으로 공부할 수 있도록 제공하는 LangGraph를 사용한 분석 시스템입니다.
 
-### Local Git Hook Protection
-- ⚡ **Hard Abort Rules**: Instantly block commits with secrets (API keys, private keys, `.env` files)
-- 🧠 **Soft LLM Checks**: AI-powered detection of DTO/Schema violations, dependency risks, permission changes
-- 🔍 **Research Loop**: Auto-fetches principle + example links (Tavily → Serper fallback)
-- 📝 **Markdown Reports**: Saved outside repo (survives `git reset`)
-- 🤝 **Human-in-Loop**: Override with reason logging
+## 🎯 주요 기능
 
-### Web Demo
-- 🌐 **FastAPI + Streamlit**: Upload diffs or paste text
-- 📥 **Download Reports**: Get MD file with findings + learning links
-- 🚀 **Deploy-Ready**: Railway (backend) + Streamlit Cloud (frontend)
+### 로컬 Git Hook 보호
+- ⚡ **하드 차단 규칙**: API 키, 개인키, `.env` 파일 등이 포함된 커밋을 즉시 차단
+- 🧠 **소프트 LLM 검사(gpt-4-o-mini)**: 위 하드 룰 통과시 AI 기반 soft llm. DTO/Schema 위반, 의존성 위험, 권한 변경 감지 등 판단하여 finding에 반영
+- 🔍 **에이전트 형 ReAct 리서치 루프(gpt-4-o-mini)**: 원리 + 예제 링크 자동 수집.Tavily → Serper순 최대 2회 폴백하며, 우선 tavily 검색후 해당 llm 에이전트가 각 자료의 적절성과 충분성을 관찰 후 serper를 사용할지 판단하여 계획을 세우고 serper tool을 이용하여 검색하여 자료 보충 실행
+- 📝 **마크다운 리포트**: 저장소 외부에 저장 (`git reset`에도 보존됨)
+- 🤝 **Human-in-Loop**: 사유 기록과 함께 오버라이드 가능(로컬 사용시 강제 푸시(ui개발중))
 
-## 🚀 Quick Start
+### 웹 데모(실제 pre-push hook과 commit 제외: 해당 git diff에 대한 검색 에이전트 부분 구현)
+- 🌐 **Streamlit 인터페이스**: git diff 업로드 또는 텍스트 붙여넣기
+- 📥 **리포트 다운로드**: 발견사항 + 학습 링크가 포함된 마크다운 파일
+- 🚀 **배포 준비 완료**: Streamlit Cloud 지원
+- ⚡ **로컬 깃 훅 보호 랭그래프 구현**: 실제 로컬에서의 초기 일부 단계 제외하고 랭그래프 실행
 
-### 1. Setup Environment
+## 🚀 로컬에서의 사용법
 
-```bash
-# Create conda environment
+### 1. 환경 설정
+
+# Conda 환경 생성
 conda create -n p_guard python=3.10 -y
 conda activate p_guard
+pip install -r requirements.txt
 
-# Install package in editable mode
+# 패키지를 편집 가능 모드로 설치
 pip install -e .
-```
 
-### 2. Configure API Keys
+### 2. .env에 API 키 설정 (openAI, tavily, serper, langsmith)
 
-Create API key files in `C:\workplace\document\API\`:
-- `openai.txt` - OpenAI API key
-- `tavily.txt` - Tavily API key
-- `serper.txt` - Serper API key (optional)
+### 3. Git Hook 설치
 
-Or use `.env` file:
-```bash
-cp .env.example .env
-# Edit .env with your keys
-```
-
-### 3. Install Git Hook
-
-```bash
-# In your target git repository
-cd /path/to/your/project
+# 사용하려는 대상 git 저장소에서 실행
+레포지토리와 연결되어 git init 된 폴더 예시
+-> cd /path/to/your/project
 conda activate p_guard
 python -m pushguardian.install_hook
-```
+이 명령은 `pre-push` hook을 설치하여 해당 레포의 모든 `git push` 전에 PushGuardian을 실행합니다.
+각종 위반사항 포함 commit 후 터미널에서  git push -u origin main 시 
+block 관련 로그 발생하며 block이 진행됩니다.
 
-This installs a `pre-push` hook that runs PushGuardian before every `git push`.
+### 🌐 로컬 웹 데모 실행(클라우드 설정시 웹상으로 주소 배포 가능)
 
-### 4. Run Web Demo
+**Streamlit로 web 구동**
+streamlit run streamlit_app.py (web ui와 python run guardian 실행)
 
-**Option A: Streamlit (Recommended)**
-```bash
-streamlit run streamlit_app.py
-```
-
-**Option B: FastAPI**
-```bash
-uvicorn pushguardian.web:app --reload --port 8000
-```
-
-## 📁 Project Structure
-
+## 📁 프로젝트 주요 구조
 ```
 pushguardian/
 ├── pushguardian/
-│   ├── config.py           # YAML + API key loader
-│   ├── git_ops.py          # Git diff extraction
-│   ├── detectors/          # Hard rule detectors
-│   │   ├── secrets.py
-│   │   ├── files.py
-│   │   └── stack_guess.py
-│   ├── llm/                # LLM analysis
-│   │   ├── judge.py        # Soft check judge
-│   │   └── observe.py      # Evidence validator
-│   ├── research/           # Web search
+│   ├── config.py           # YAML + API 키 로더
+│   ├── git_ops.py          # Git diff 추출
+│   ├── detectors/          # 하드 규칙 감지기
+│   │   ├── secrets.py      # 비밀 정보 탐지
+│   │   ├── files.py        # 민감 파일 탐지
+│   │   └── stack_guess.py  # 스택 추론
+│   ├── llm/                # LLM 분석
+│   │   ├── judge.py        # 소프트 체크 판정
+│   │   ├── observe.py      # 증거 검증
+│   │   └── research_planner.py  # 리서치 계획
+│   ├── research/           # 웹 검색
 │   │   ├── tavily_client.py
 │   │   ├── serper_client.py
-│   │   └── gather.py
-│   ├── report/             # Report generation
+│   │   └── gather.py       # 리서치 수집
+│   ├── report/             # 리포트 생성
 │   │   ├── models.py
 │   │   └── writer.py
-│   ├── graph.py            # LangGraph workflow ⭐
+│   ├── graph.py            # LangGraph 워크플로우 ⭐
 │   ├── cli.py              # Pre-push CLI
-│   ├── install_hook.py     # Hook installer
-│   └── web.py              # FastAPI server
+│   ├── install_hook.py     # Hook 설치 도구
+│   └── web.py              # FastAPI 서버 (초기 코딩)
 ├── .pushguardian/
-│   └── config.yaml         # User configuration
+│   └── config.yaml         # 사용자 설정⭐(배운 스택, 약한 스택 설정 가능)
+│                             
 ├── examples/
-│   └── sample_diff.txt     # Test diff
-├── tests/                  # Unit tests
-└── streamlit_app.py        # Streamlit frontend
+│   └── test_file/          # 테스트 diff 파일 예제들
+│      
+├── tests/                  # 전체 단위 테스트 코드
+└── streamlit_app.py        # Streamlit 프론트엔드
 ```
 
-## ⚙️ Configuration
-
-Edit `.pushguardian/config.yaml`:
-
-```yaml
-# Report storage (outside repo)
-report_dir: "%USERPROFILE%\\Documents\\PushGuardian\\reports"
-
-# Your stack profile
-stacks_known:
-  - python
-  - fastapi
-stacks_weak:
-  - react
-  - kubernetes
-
-# Hard abort patterns
-hard_abort:
-  file_patterns:
-    - ".env"
-    - "*.pem"
-  secret_patterns:
-    - "sk-"
-    - "AKIA"
-```
-
-## 🧪 Testing
-
-Run tests:
-```bash
+## 🧪 테스트
+단위 테스트 실행:
 pytest tests/ -v
-```
 
-Test with sample diff:
-```bash
-# Web mode
-curl -X POST http://localhost:8000/analyze-diff \
-  -F "diff_file=@examples/sample_diff.txt"
-```
-
-## 📊 LangGraph Workflow
+## 📊 LangGraph 워크플로우
 
 ```
 load_config → scope_classify → hard_policy_check → soft_llm_judge
                                                           ↓
-                                            [need research?]
+                                            [리서치 필요?]
                                                           ↓
                                                    research_tavily
                                                           ↓
-                                               observation_validate
+                                               observation_validate(llm 에이전트 ReAct)
                                                           ↓
-                                              [sufficient? or recheck?]
+                                              [충분? or 재검색?(최대 2회 loop/ plan후 search)]
                                                     ↙         ↘
                                           write_report    research_serper
                                                 ↓
                                           persist_report → END
 ```
 
-## 🌐 Deployment
+### 주요 노드 설명
 
-### Streamlit Cloud (Frontend)
-1. Push to GitHub
-2. Go to [share.streamlit.io](https://share.streamlit.io)
-3. Deploy `streamlit_app.py`
-4. Add secrets in Streamlit dashboard
+1. **load_config**: 설정 파일 로드, 모든 state 기본값 설정
+2. **scope_classify**: 파일 타입 및 스택 분류
+3. **hard_policy_check**: 비밀 정보 및 민감 파일 검사 (즉시 차단), 히스토리 스캔- 몇 커밋 전에 추가되었는지
+4. **soft_llm_judge**: LLM 기반 보안 분석 + 학습 포인트 추출(GPT-4o-mini)
+5. **research_tavily/serper(GPT-4o-mini)**: 보안 원리 및 학습 자료 검색
+	- 1차 tavily : Findings → 보안 원리 검색, Weak stacks → 학습 자료 검색
+	- 2차 serper : observation_validate`에서 "불충분" 판단 시 LLM이 생성한 refined query로 재검색
+6. **observation_validate**: LLM이 검색 결과 품질 평가(GPT-4o-mini)
+7. **write_report**: 마크다운 리포트 생성
+8. **persist_report**: 리포트 저장
 
-### Railway (Backend - Optional)
-1. Create `Procfile`: `web: uvicorn pushguardian.web:app --host 0.0.0.0 --port $PORT`
-2. Push to GitHub
-3. Connect to Railway
-4. Add environment variables
+### 주요 State 설명
+# 입력 (Input)
+- `diff_text`: Git diff 원문
+- `mode`: "cli" | "web" (실행 모드)
+- `config`: 설정 파일 (.pushguardian/config.yaml)
+# 분석 데이터
+- `changed_files`: 변경된 파일 목록
+- `detected_stacks`: 감지된 기술 스택 (docker, react 등)
+- `weak_stack_touched`: 약한 스택 목록 (학습 모드)
+# 보안 분석 결과
+- `hard_findings`: 하드 차단 이슈 (secrets, .env)
+- `soft_findings`: 소프트 이슈 (XSS, SQL injection)
+- `risk_score`: 위험 점수 (0.0~1.0)
+- `severity`: "low" | "medium" | "high" | "critical"
+- `decision`: "allow" | "block" | "override"
+# 리서치 & 학습
+- `evidence`: 검색 결과 (principle_links, example_links)
+- `learning_points`: 기본 개념 학습 포인트 (weak stack용)
+- `recheck_count`: 리서치 반복 횟수 (0=Tavily, 1=Serper)
+- `research_plan`: LLM 플래너 출력 (next_action, reasoning)
+# 출력
+- `history_hint`: 히스토리 스캔 결과 (몇 커밋 전?)
+- `report_md`: 마크다운 리포트
+- `report_path`: 저장된 리포트 파일 경로
 
-## 🔒 Security Notes
-
-- ⚠️ Hook can be bypassed with `git push --no-verify`
-- 📂 Reports saved outside repo: `%USERPROFILE%\Documents\PushGuardian\`
-- 🔐 Never commit `.env` or API keys
-
-## 📚 Learn More
-
-- [LangGraph Docs](https://langchain-ai.github.io/langgraph/)
-- [Tavily API](https://tavily.com)
-- [Git Hooks Guide](https://git-scm.com/book/en/v2/Customizing-Git-Git-Hooks)
-
----
-
-**Built with ❤️ using LangGraph, FastAPI, and Streamlit**
+**LangGraph, Streamlit으로 만든 오픈소스 프로젝트**
