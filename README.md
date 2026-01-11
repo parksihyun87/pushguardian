@@ -99,6 +99,20 @@ pushguardian/
 단위 테스트 실행:
 pytest tests/ -v
 
+## 🔍 성능 벤치마크
+검색 품질 및 latency 개선을 위한 벤치마크 시스템:
+```bash
+conda activate p_guard
+python run_benchmark.py
+```
+
+### 측정 지표:
+- **Performance**: 노드별 실행 시간, 검색 API latency, LLM 호출 수
+- **Search Quality**: 쿼리 길이, 고품질 도메인 비율, 스팸 필터링 효율
+- **Workflow**: 검색 반복 횟수, 사용된 도구, 최종 결과 품질
+
+상세 가이드: [BENCHMARK_GUIDE.md](BENCHMARK_GUIDE.md)
+
 ## 🧪 디버깅
 UI를 통해 검색 query문, iteration, langsmith로 trace 확인 및 공부
 

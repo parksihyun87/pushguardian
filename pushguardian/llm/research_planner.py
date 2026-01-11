@@ -17,7 +17,7 @@ You should output a structured JSON response with:
 - next_action: "search_tavily" | "search_serper" | "refine_query" | "done"
 - refined_query: string - improved search query (if needed)
 - filter_domains: list - domains to exclude from results
-- reasoning: string - explain your decision
+- reasoning: string - explain your decision (this explanation MUST be written in Korean)
 
 Be strategic: prioritize high-quality sources (OWASP, GitHub, official docs) over generic blogs.
 """
@@ -52,7 +52,7 @@ def create_planner_prompt(
 2. At least 1 practical example link (GitHub, Stack Overflow, tutorials)
 3. Links must be relevant to the findings (not spam like SK company or academic papers)
 
-**Your decision in JSON:**
+**Your decision in JSON (reasoning MUST be in Korean):**
 {{
     "is_sufficient": true/false,
     "missing_categories": ["principle", "example"],

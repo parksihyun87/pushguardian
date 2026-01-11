@@ -31,8 +31,8 @@ def install_hook():
                 break
             git_dir = git_dir.parent
         else:
-            console.print("[red]Error: Not in a git repository.[/red]")
-            console.print("Please run this command from inside a git repository.")
+            console.print("[red]에러: git 저장소 안에서 실행되지 않았습니다.[/red]")
+            console.print("git 저장소 디렉터리 내부에서 이 명령을 실행해 주세요.")
             sys.exit(1)
 
         hooks_dir = git_dir / ".git" / "hooks"
@@ -54,19 +54,19 @@ def install_hook():
         if os.name != "nt":  # Not Windows
             os.chmod(hook_path, 0o755)
 
-        console.print(f"[green]✅ Pre-push hook installed successfully![/green]")
-        console.print(f"[cyan]Hook location:[/cyan] {hook_path}")
-        console.print(f"[cyan]Python executable:[/cyan] {python_exe}")
-        console.print("\n[yellow]Note:[/yellow] You can bypass this hook with: git push --no-verify")
+        console.print(f"[green]✅ pre-push 훅이 성공적으로 설치되었습니다![/green]")
+        console.print(f"[cyan]훅 위치:[/cyan] {hook_path}")
+        console.print(f"[cyan]Python 실행 파일:[/cyan] {python_exe}")
+        console.print("\n[yellow]참고:[/yellow] 이 훅을 건너뛰려면 'git push --no-verify' 를 사용할 수 있습니다.")
 
     except Exception as e:
-        console.print(f"[red]Error installing hook: {e}[/red]")
+        console.print(f"[red]훅 설치 중 오류가 발생했습니다: {e}[/red]")
         sys.exit(1)
 
 
 def main():
     """CLI entry point for install-hook command."""
-    console.print("[bold magenta]🛡️  PushGuardian Hook Installer[/bold magenta]\n")
+    console.print("[bold magenta]🛡️  PushGuardian pre-push 훅 설치기[/bold magenta]\n")
     install_hook()
 
 

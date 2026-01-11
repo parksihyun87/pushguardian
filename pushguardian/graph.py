@@ -2,6 +2,7 @@
 
 from typing import TypedDict, List, Annotated, Literal
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
 from .config import load_config
 from .git_ops import parse_changed_files
 from .detectors.secrets import detect_secrets
@@ -11,8 +12,13 @@ from .llm.judge import run_soft_judge
 from .llm.observe import validate_observation
 from .llm.research_planner import plan_next_research
 from .research.gather import gather_research, merge_evidence
+from .research.link_annotator import annotate_link_titles_with_llm
+from .research.naver_client import search_naver
+from .research.naver_filter import filter_naver_results
+from .research.naver_query_generator import generate_naver_query
 from .report.models import Finding, Evidence
 from .report.writer import generate_report_md, save_report
+import time
 
 
 # State definition
@@ -73,6 +79,10 @@ class GuardianState(TypedDict):
     # LangSmith trace URL (if tracing enabled)
     langsmith_url: str | None
 
+    # HITL (Human-in-the-Loop) 관련
+    human_approval_needed: bool  # 사람 승인 필요 여부
+    human_decision: Literal["approve", "search_naver", "skip"] | None  # 사람의 결정
+
 # Node functions
 def load_config_node(state: GuardianState) -> GuardianState:
     """Load configuration."""
@@ -97,6 +107,8 @@ def load_config_node(state: GuardianState) -> GuardianState:
     state.setdefault("report_path", None)
     state.setdefault("errors", [])
     state.setdefault("langsmith_url", None)
+    state.setdefault("human_approval_needed", False)
+    state.setdefault("human_decision", None)
 
     # Now try to load config
     try:
@@ -276,6 +288,12 @@ def research_tavily_node(state: GuardianState) -> GuardianState:
     # Merge with existing evidence
     state["evidence"] = merge_evidence(state["evidence"], new_evidence)
 
+    # LLM으로 링크 요약을 한국어 짧은 제목으로 보강 (최대 8개)
+    try:
+        annotate_link_titles_with_llm(state["evidence"], max_items=8)
+    except Exception as e:
+        state["errors"].append(f"Link annotation failed: {e}")
+
     # Store query for LLM planner
     if all_findings:
         state["last_query"] = f"{all_findings[0].kind} security best practices"
@@ -383,6 +401,170 @@ def observation_validate_node(state: GuardianState) -> GuardianState:
     state["research_plan"] = plan
     # Format notes with bullet points and line breaks for better readability
     state["evidence"].notes += f"\n\n* Observation: {observation.get('notes', 'N/A')}\n\n* Plan: {plan['reasoning']}"
+
+    # 2회 연구 완료 후 한글 자료 부족 시 HITL 트리거
+    if recheck_count >= 1:  # tavily(0) + serper(1) = 2회 완료
+        # LLM observation에서 한글 자료 부족 여부 확인
+        korean_content_sufficient = observation.get("korean_content_sufficient", True)
+
+        # LLM이 한글 자료가 부족하다고 판단하면 HITL 트리거
+        if not korean_content_sufficient:
+            state["human_approval_needed"] = True
+            print(f"🔍 한글 자료 부족 감지: HITL 트리거 (총 링크: {len(evidence.principle_links) + len(evidence.example_links)}개)")
+
+    return state
+
+
+def human_approval_node(state: GuardianState) -> GuardianState:
+    """사람의 승인을 기다리는 노드 (interrupt 발생)."""
+    # 이 노드는 interrupt를 통해 사람의 입력을 기다림
+    # Streamlit에서 graph.get_state()로 현재 상태를 확인하고
+    # graph.update_state()로 human_decision을 설정한 후
+    # graph.stream()을 다시 호출하여 진행
+
+    # 여기서는 아무것도 하지 않고, 단지 interrupt 지점 역할만 함
+    print("⏸️  사람의 승인 대기 중... (human_approval_node)")
+    return state
+
+
+def research_naver_node(state: GuardianState) -> GuardianState:
+    """네이버 검색 API로 한글 자료 추가 수집."""
+    all_findings = state["hard_findings"] + state["soft_findings"]
+    weak_stack_touched = state["weak_stack_touched"]
+    learning_points = state.get("learning_points", [])
+    evidence = state["evidence"]
+
+    # 보안 이슈와 약점 스택이 모두 있으면 두 번 검색
+    search_tasks = []
+
+    # 1. 보안 이슈 검색
+    if all_findings:
+        first_finding = all_findings[0]
+        query_security = generate_naver_query(
+            finding_title=first_finding.title,
+            finding_detail=first_finding.detail,
+            finding_kind=first_finding.kind
+        )
+        search_tasks.append({
+            "query": query_security,
+            "mode": "security",
+            "finding_title": first_finding.title,
+            "finding_detail": first_finding.detail,
+            "type": "보안"
+        })
+
+    # 2. 약점 스택 튜토리얼 검색
+    if weak_stack_touched and learning_points:
+        query_tutorial = f"{weak_stack_touched[0]} 튜토리얼"
+        concepts = ", ".join([lp.get("concept", "") for lp in learning_points[:3]])
+        search_tasks.append({
+            "query": query_tutorial,
+            "mode": "tutorial",
+            "finding_title": weak_stack_touched[0],
+            "finding_detail": f"기본 개념: {concepts}",
+            "type": "튜토리얼"
+        })
+
+    # 둘 다 없으면 기본 검색
+    if not search_tasks:
+        search_tasks.append({
+            "query": "웹 보안 모범 사례",
+            "mode": "security",
+            "finding_title": "웹 보안",
+            "finding_detail": "일반 보안 모범 사례",
+            "type": "기본"
+        })
+
+    # 각 검색 작업 실행
+    all_filtered_results = []
+    for task in search_tasks:
+        query = task["query"]
+        mode = task["mode"]
+        search_type = task["type"]
+
+        print(f"🔍 네이버 검색 시작 ({search_type}): {query}")
+
+        # 네이버 검색 실행
+        start_time = time.time()
+        results = search_naver(query, max_results=10)
+        latency_ms = (time.time() - start_time) * 1000
+
+        print(f"🔍 네이버 검색 완료 ({search_type}): {len(results)}개 결과")
+
+        # LLM으로 결과 필터링
+        if results:
+            filtered_results = filter_naver_results(
+                results=results,
+                finding_title=task["finding_title"],
+                finding_detail=task["finding_detail"],
+                mode=mode
+            )
+            print(f"🤖 LLM 필터링 ({search_type}): {len(results)}개 → {len(filtered_results)}개 선별")
+
+            # 검색 메타데이터에 모드 표시 추가
+            for result in filtered_results:
+                result["_search_mode"] = mode  # 나중에 구분하기 위해
+
+            all_filtered_results.extend(filtered_results)
+        else:
+            print(f"⚠️ 검색 결과 없음 ({search_type})")
+
+        # 메타데이터 업데이트
+        evidence.tools_used.append("naver")
+        evidence.search_queries.append(query)
+        evidence.search_latencies.append(latency_ms)
+        evidence.notes += f"\n\n* 네이버 검색 완료 ({search_type}): {len(results)}개 결과 수집 ({latency_ms:.0f}ms)"
+
+    # 통합된 필터링 결과를 Evidence에 추가
+    filtered_results = all_filtered_results
+
+    for result in filtered_results:
+        url = result.get("url", "")
+        title = result.get("title", "")
+        llm_reason = result.get("llm_reason", "")
+        search_mode = result.get("_search_mode", "security")  # 어떤 모드로 검색했는지
+
+        if url:
+            # 원칙 링크와 예시 링크 구분
+            if "github" in url.lower() or "stackoverflow" in url.lower():
+                evidence.example_links.append(url)
+            else:
+                evidence.principle_links.append(url)
+
+            # 메타데이터에 추가 (모드별로 구분)
+            if "github" in url.lower() or "stackoverflow" in url.lower():
+                evidence.example_link_infos.append({
+                    "url": url,
+                    "summary_ko": f"{title} - {llm_reason}" if llm_reason else title,
+                    "role": "example",
+                    "source": "naver_ko"
+                })
+            else:
+                # 보안 모드면 principle_link_infos에 추가
+                # 튜토리얼 모드면 example_link_infos에 추가 (학습 자료)
+                if search_mode == "security":
+                    evidence.principle_link_infos.append({
+                        "url": url,
+                        "summary_ko": f"{title} - {llm_reason}" if llm_reason else title,
+                        "role": "principle",
+                        "source": "naver_ko"
+                    })
+                else:  # tutorial mode
+                    evidence.example_link_infos.append({
+                        "url": url,
+                        "summary_ko": f"{title} - {llm_reason}" if llm_reason else title,
+                        "role": "example",
+                        "source": "naver_ko"
+                    })
+
+    # 중복 제거
+    evidence.principle_links = list(set(evidence.principle_links))
+    evidence.example_links = list(set(evidence.example_links))
+
+    print(f"✅ 네이버 검색 완료: 총 {len(all_filtered_results)}개 자료 선별")
+    print(f"📊 최종 링크 수 - 원칙: {len(evidence.principle_links)}, 예시: {len(evidence.example_links)}")
+    print(f"📊 메타데이터 링크 수 - 원칙: {len(evidence.principle_link_infos)}, 예시: {len(evidence.example_link_infos)}")
+
     return state
 
 def write_report_node(state: GuardianState) -> GuardianState:
@@ -443,7 +625,7 @@ def should_do_research(state: GuardianState) -> Literal["research", "write_repor
     return "research"
 
 
-def should_recheck(state: GuardianState) -> Literal["serper", "write_report"]:
+def should_recheck(state: GuardianState) -> Literal["serper", "human_approval", "write_report"]:
     """LLM 플래너가 결정한 다음 액션으로 라우팅."""
     plan = state.get("research_plan", {})
     next_action = plan.get("next_action", "done")
@@ -452,6 +634,9 @@ def should_recheck(state: GuardianState) -> Literal["serper", "write_report"]:
     # Force stop after max iterations (safety limit)
     # recheck_count: 0 (tavily), 1 (serper), max is 1
     if current_recheck >= 1:
+        # 2회 완료 후 HITL 체크
+        if state.get("human_approval_needed"):
+            return "human_approval"
         return "write_report"
 
     # LLM이 선택한 액션에 따라 라우팅
@@ -460,9 +645,19 @@ def should_recheck(state: GuardianState) -> Literal["serper", "write_report"]:
     else:  # "done" or unknown
         return "write_report"
 
+
+def after_human_approval(state: GuardianState) -> Literal["naver", "write_report"]:
+    """사람의 결정에 따라 라우팅."""
+    decision = state.get("human_decision")
+
+    if decision == "search_naver":
+        return "naver"
+    else:  # "approve" or "skip"
+        return "write_report"
+
 # Build the graph
-def build_graph() -> StateGraph:
-    """Build the LangGraph workflow."""
+def build_graph(checkpointer=None) -> StateGraph:
+    """Build the LangGraph workflow with optional checkpointer for HITL."""
     workflow = StateGraph(GuardianState)
 
     # Add nodes
@@ -473,6 +668,8 @@ def build_graph() -> StateGraph:
     workflow.add_node("research_tavily", research_tavily_node)
     workflow.add_node("research_serper", research_serper_node)
     workflow.add_node("observation_validate", observation_validate_node)
+    workflow.add_node("human_approval", human_approval_node)
+    workflow.add_node("research_naver", research_naver_node)
     workflow.add_node("write_report", write_report_node)
     workflow.add_node("persist_report", persist_report_node)
 
@@ -489,12 +686,13 @@ def build_graph() -> StateGraph:
 
     workflow.add_edge("research_tavily", "observation_validate")
 
-    # Conditional: LLM decides next action
+    # Conditional: LLM decides next action (including HITL)
     workflow.add_conditional_edges(
         "observation_validate",
         should_recheck,
         {
             "serper": "research_serper",
+            "human_approval": "human_approval",
             "write_report": "write_report"
         },
     )
@@ -502,10 +700,27 @@ def build_graph() -> StateGraph:
     # After additional research, validate again (but only once more)
     workflow.add_edge("research_serper", "observation_validate")
 
+    # HITL: 사람의 결정에 따라 네이버 검색 또는 리포트 작성
+    workflow.add_conditional_edges(
+        "human_approval",
+        after_human_approval,
+        {
+            "naver": "research_naver",
+            "write_report": "write_report"
+        }
+    )
+
+    # 네이버 검색 후 리포트 작성
+    workflow.add_edge("research_naver", "write_report")
+
     workflow.add_edge("write_report", "persist_report")
     workflow.add_edge("persist_report", END)
 
-    return workflow.compile()
+    # Compile with checkpointer if provided (for HITL)
+    if checkpointer:
+        return workflow.compile(checkpointer=checkpointer, interrupt_before=["human_approval"])
+    else:
+        return workflow.compile()
 
 
 # Main execution function
@@ -534,9 +749,17 @@ def run_guardian(diff_text: str, mode: Literal["cli", "web"] = "cli", repo_root:
     return final_state
 
 
-def run_guardian_stream(diff_text: str, mode: Literal["cli", "web"] = "cli", repo_root: str | None = None):
+def run_guardian_stream(diff_text: str, mode: Literal["cli", "web"] = "cli", repo_root: str | None = None,
+                       enable_hitl: bool = False, thread_id: str = "default"):
     """
     Run the PushGuardian workflow with streaming support.
+
+    Args:
+        diff_text: Git diff content
+        mode: Execution mode (cli or web)
+        repo_root: Git repository root
+        enable_hitl: Enable Human-in-the-Loop (requires checkpointer)
+        thread_id: Thread ID for checkpointer (used to resume interrupted workflows)
 
     Yields:
         Tuple of (node_name, state) for each node execution
@@ -548,7 +771,14 @@ def run_guardian_stream(diff_text: str, mode: Literal["cli", "web"] = "cli", rep
     import os
     from langsmith import traceable
 
-    graph = build_graph()
+    # Build graph with checkpointer if HITL is enabled
+    if enable_hitl:
+        checkpointer = MemorySaver()
+        graph = build_graph(checkpointer=checkpointer)
+        config = {"configurable": {"thread_id": thread_id}}
+    else:
+        graph = build_graph()
+        config = None
 
     initial_state = {
         "diff_text": diff_text,
@@ -564,11 +794,21 @@ def run_guardian_stream(diff_text: str, mode: Literal["cli", "web"] = "cli", rep
     else:
         langsmith_url = None
 
-    for chunk in graph.stream(initial_state):
-        # chunk is a dict like {"node_name": state}
-        for node_name, state in chunk.items():
-            # Add LangSmith URL to state
-            if langsmith_url:
-                state["langsmith_url"] = langsmith_url
+    if config:
+        for chunk in graph.stream(initial_state, config=config):
+            # chunk is a dict like {"node_name": state}
+            for node_name, state in chunk.items():
+                # Add LangSmith URL to state
+                if langsmith_url:
+                    state["langsmith_url"] = langsmith_url
 
-            yield node_name, state
+                yield node_name, state
+    else:
+        for chunk in graph.stream(initial_state):
+            # chunk is a dict like {"node_name": state}
+            for node_name, state in chunk.items():
+                # Add LangSmith URL to state
+                if langsmith_url:
+                    state["langsmith_url"] = langsmith_url
+
+                yield node_name, state

@@ -18,6 +18,10 @@ You should output a structured JSON response with:
 - quick_fixes: List of immediate action items
 
 Be thorough but avoid false positives. Focus on real security and architectural risks.
+
+IMPORTANT LANGUAGE REQUIREMENT:
+- All human-readable text fields in the JSON (title, detail, fix_now, quick_fixes, learning_points.detail, learning_points.concept)
+  MUST be written in Korean (한국어) in a natural, professional tone.
 """
 
 
@@ -65,7 +69,7 @@ Git diff:
 {diff_text[:3000]}
 ```
 
-Provide your analysis in JSON format:
+Provide your analysis in JSON format (remember: all human-facing text must be in Korean):
 {{
     "findings": [
         {{

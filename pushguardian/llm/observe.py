@@ -18,6 +18,12 @@ QUALITY CRITERIA:
 3. Relevance: Links must directly address the specific finding, not just general topics
 4. Practicality: Examples must show actual code/implementation, not just theory
 
+KOREAN CONTENT ASSESSMENT:
+5. Check if the collected links include sufficient Korean language content
+   - Look for Korean domain names (e.g., .kr, tistory.com, velog.io, naver.com)
+   - Evaluate if Korean language documentation would be beneficial for the user
+   - Set korean_content_sufficient to false if Korean resources would significantly improve understanding
+
 IMPORTANT: 1-2 HIGH-QUALITY links are better than 5-10 low-quality links!
 
 You should output a structured JSON response with:
@@ -25,7 +31,8 @@ You should output a structured JSON response with:
 - need_more: boolean - whether more HIGH-QUALITY research is needed
 - missing_categories: list of category names still needed
 - relevance_score: 0.0 to 1.0 (quality-weighted, not count-based)
-- notes: Brief explanation focusing on quality assessment
+- korean_content_sufficient: boolean - whether Korean language resources are sufficient (false triggers HITL for Naver search)
+- notes: Brief explanation focusing on quality assessment (this explanation MUST be written in Korean)
 """
 
 
@@ -62,13 +69,24 @@ EVALUATION STRATEGY:
 - Prefer 1 excellent link over 10 mediocre links
 - Max 1 retry allowed, so be realistic in evaluation
 
-Provide your assessment in JSON format:
+KOREAN CONTENT CHECK (for korean_content_sufficient field):
+- Examine all collected links (URLs shown above)
+- Count how many are Korean language sources (.kr domains, tistory, velog, naver, etc.)
+- Set korean_content_sufficient to FALSE if:
+  * No Korean language sources found AND
+  * The topic would benefit from Korean examples/tutorials
+- Set korean_content_sufficient to TRUE if:
+  * Already have 1+ Korean sources OR
+  * The topic is well-covered by English sources (e.g., official docs)
+
+Provide your assessment in JSON format. The `notes` field must be written in Korean (한국어):
 {{
     "is_sufficient": true/false,
     "need_more": true/false,
     "missing_categories": ["principle"/"example" if high-quality is missing],
     "relevance_score": 0.0-1.0,
-    "notes": "Explain quality assessment (e.g., 'Has OWASP cheatsheet and GitHub example' or 'Only glossary pages, need authoritative sources')"
+    "korean_content_sufficient": true/false,
+    "notes": "Explain quality assessment including Korean content status (e.g., '한글 자료 없음, 네이버 검색 추가 필요' or '영문 자료로 충분함')"
 }}
 
 Return ONLY the JSON object, no other text.
@@ -100,18 +118,27 @@ def validate_observation(
             "need_more": False,
             "missing_categories": [],
             "relevance_score": 1.0,
+            "korean_content_sufficient": True,
             "notes": "No findings to validate",
         }
         evidence.llm_observations.append(result)
         return result
 
-    # If we've already tried once or more, force stop
+    # If we've already tried once or more, force stop (but still check Korean content)
     if recheck_count >= 1:
+        # Check if we have any Korean content
+        all_links = evidence.principle_links + evidence.example_links
+        has_korean = any(
+            any(domain in link.lower() for domain in ['.kr', 'tistory', 'velog', 'naver'])
+            for link in all_links
+        )
+
         result = {
             "is_sufficient": True,  # Force sufficient to stop loop
             "need_more": False,
             "missing_categories": [],
             "relevance_score": 0.5,
+            "korean_content_sufficient": has_korean,  # Trigger HITL if no Korean content
             "notes": "Max research attempts reached (1 retry done), proceeding with available evidence",
         }
         evidence.llm_observations.append(result)
@@ -154,7 +181,13 @@ def validate_observation(
         return result
 
     except Exception as e:
-        # Fallback
+        # Fallback: simple heuristic check for Korean content
+        all_links = evidence.principle_links + evidence.example_links
+        has_korean = any(
+            any(domain in link.lower() for domain in ['.kr', 'tistory', 'velog', 'naver'])
+            for link in all_links
+        )
+
         result = {
             "is_sufficient": has_principle and has_example or recheck_count >= 2,
             "need_more": (not has_principle or not has_example) and recheck_count < 2,
@@ -163,6 +196,7 @@ def validate_observation(
                 + (["example"] if not has_example else [])
             ),
             "relevance_score": 0.5,
+            "korean_content_sufficient": has_korean,  # Fallback check
             "notes": f"LLM validation failed: {e}",
         }
         evidence.llm_observations.append({

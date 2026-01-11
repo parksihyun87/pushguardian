@@ -44,14 +44,14 @@ def detect_sensitive_files(changed_files: List[str], file_patterns: List[str]) -
                 findings.append(
                     Finding(
                         kind="file",
-                        title=f"Sensitive file detected: {pattern}",
-                        detail=f"File: {filepath}",
+                        title=f"민감한 파일 감지: {pattern}",
+                        detail=f"파일: {filepath}",
                         confidence=1.0,
                         severity="critical",
                         fix_now=(
-                            "1. Remove the sensitive file from git tracking\n"
-                            "2. Add to .gitignore to prevent future commits\n"
-                            "3. Use git filter-branch or BFG Repo-Cleaner if already pushed"
+                            "1. git 추적에서 민감한 파일을 제거하세요\n"
+                            "2. .gitignore에 추가하여 향후 커밋을 방지하세요\n"
+                            "3. 이미 푸시했다면 git filter-branch나 BFG Repo-Cleaner를 사용하세요"
                         ),
                     )
                 )

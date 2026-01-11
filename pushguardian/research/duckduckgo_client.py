@@ -12,7 +12,7 @@ def search_duckduckgo(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
         max_results: Maximum number of results
 
     Returns:
-        List of search results with url, title, snippet
+        List of search results with url, title, content (짧은 요약 snippet)
     """
     try:
         # Use duckduckgo-search library (free, no API key)
@@ -24,11 +24,17 @@ def search_duckduckgo(query: str, max_results: int = 5) -> List[Dict[str, Any]]:
             search_results = ddgs.text(query, max_results=max_results)
 
             for item in search_results:
+                raw_content = item.get("body", "") or ""
+                snippet_max_len = 400
+                snippet = raw_content[:snippet_max_len]
+                if len(raw_content) > snippet_max_len:
+                    snippet += "..."
+
                 results.append(
                     {
                         "url": item.get("href", ""),
                         "title": item.get("title", ""),
-                        "content": item.get("body", ""),
+                        "content": snippet,
                         "score": 0.6,  # DuckDuckGo doesn't provide scores
                     }
                 )

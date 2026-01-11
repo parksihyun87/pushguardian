@@ -34,7 +34,7 @@ async def root():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>PushGuardian Web Demo</title>
+        <title>PushGuardian 웹 데모</title>
         <style>
             body { font-family: Arial, sans-serif; max-width: 900px; margin: 50px auto; padding: 20px; }
             h1 { color: #2c3e50; }
@@ -46,22 +46,22 @@ async def root():
         </style>
     </head>
     <body>
-        <h1>🛡️ PushGuardian Web Demo</h1>
-        <p>Paste your git diff below or upload a diff file to analyze security and best-practice issues.</p>
+        <h1>🛡️ PushGuardian 웹 데모</h1>
+        <p>아래에 git diff를 붙여 넣거나 diff 파일을 업로드하여 보안 이슈와 모범 사례 위반을 분석해 보세요.</p>
 
         <form id="analyzeForm">
-            <h3>Option 1: Paste Diff Text</h3>
-            <textarea name="diff_text" id="diff_text" placeholder="Paste git diff output here..."></textarea>
+            <h3>옵션 1: Diff 텍스트 직접 붙여넣기</h3>
+            <textarea name="diff_text" id="diff_text" placeholder="여기에 git diff 출력 결과를 붙여 넣으세요..."></textarea>
 
-            <h3>Option 2: Upload Diff File</h3>
+            <h3>옵션 2: Diff 파일 업로드</h3>
             <input type="file" name="diff_file" id="diff_file" accept=".txt,.diff,.patch">
 
             <br><br>
-            <button type="submit">🔍 Analyze Diff</button>
+            <button type="submit">🔍 Diff 분석하기</button>
         </form>
 
         <div id="result" class="result" style="display:none;">
-            <h2>Analysis Result</h2>
+            <h2>분석 결과</h2>
             <div id="resultContent"></div>
         </div>
 
@@ -78,7 +78,7 @@ async def root():
                 } else if (diffText) {
                     formData.append('diff_text', diffText);
                 } else {
-                    alert('Please provide either diff text or upload a file.');
+                    alert('Diff 텍스트를 입력하거나 파일을 업로드해 주세요.');
                     return;
                 }
 
@@ -86,7 +86,7 @@ async def root():
                 const resultContent = document.getElementById('resultContent');
 
                 resultDiv.style.display = 'block';
-                resultContent.innerHTML = '<p>⏳ Analyzing...</p>';
+                resultContent.innerHTML = '<p>⏳ 분석 중입니다...</p>';
 
                 try {
                     const response = await fetch('/analyze-diff', {
@@ -97,25 +97,41 @@ async def root():
                     const data = await response.json();
 
                     if (response.ok) {
+                        // 한글 변환 맵핑
+                        const decisionMap = {
+                            'allow': '허용',
+                            'block': '차단',
+                            'override': '오버라이드'
+                        };
+                        const severityMap = {
+                            'low': '낮음',
+                            'medium': '중간',
+                            'high': '높음',
+                            'critical': '심각'
+                        };
+
+                        const decisionKo = decisionMap[data.decision.toLowerCase()] || data.decision.toUpperCase();
+                        const severityKo = severityMap[data.severity.toLowerCase()] || data.severity.toUpperCase();
+
                         let html = `
-                            <p><strong>Decision:</strong> <span style="color: ${data.decision === 'block' ? 'red' : 'green'}">${data.decision.toUpperCase()}</span></p>
-                            <p><strong>Severity:</strong> ${data.severity.toUpperCase()}</p>
-                            <p><strong>Risk Score:</strong> ${data.risk_score.toFixed(2)}/1.00</p>
-                            <p><strong>Findings:</strong> ${data.findings_count}</p>
+                            <p><strong>결정:</strong> <span style="color: ${data.decision === 'block' ? 'red' : 'green'}">${decisionKo}</span></p>
+                            <p><strong>심각도:</strong> ${severityKo}</p>
+                            <p><strong>위험 점수:</strong> ${data.risk_score.toFixed(2)}/1.00</p>
+                            <p><strong>발견된 이슈 수:</strong> ${data.findings_count}</p>
                         `;
 
                         if (data.report_id) {
-                            html += `<p><a href="/download/${data.report_id}" download>📥 Download Full Report (MD)</a></p>`;
+                            html += `<p><a href="/download/${data.report_id}" download>📥 전체 리포트 다운로드 (MD)</a></p>`;
                         }
 
-                        html += `<h3>Full Report (Preview)</h3><pre>${escapeHtml(data.report_md)}</pre>`;
+                        html += `<h3>전체 리포트 (미리보기)</h3><pre>${escapeHtml(data.report_md)}</pre>`;
 
                         resultContent.innerHTML = html;
                     } else {
-                        resultContent.innerHTML = `<p style="color:red;">Error: ${data.detail || 'Analysis failed'}</p>`;
+                        resultContent.innerHTML = `<p style="color:red;">오류: ${data.detail || '분석에 실패했습니다'}</p>`;
                     }
                 } catch (err) {
-                    resultContent.innerHTML = `<p style="color:red;">Error: ${err.message}</p>`;
+                    resultContent.innerHTML = `<p style="color:red;">오류: ${err.message}</p>`;
                 }
             });
 
@@ -151,10 +167,10 @@ async def analyze_diff(
     elif diff_text:
         diff_content = diff_text
     else:
-        raise HTTPException(status_code=400, detail="No diff provided")
+        raise HTTPException(status_code=400, detail="Diff 내용이 제공되지 않았습니다.")
 
     if not diff_content.strip():
-        raise HTTPException(status_code=400, detail="Empty diff")
+        raise HTTPException(status_code=400, detail="Diff 내용이 비어 있습니다.")
 
     try:
         # Run guardian in web mode
@@ -188,7 +204,7 @@ async def analyze_diff(
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"분석에 실패했습니다: {str(e)}")
 
 
 @app.get("/download/{report_id}")
@@ -203,12 +219,12 @@ async def download_report(report_id: str):
         File download response
     """
     if report_id not in REPORTS_CACHE:
-        raise HTTPException(status_code=404, detail="Report not found")
+        raise HTTPException(status_code=404, detail="리포트를 찾을 수 없습니다.")
 
     report_path = REPORTS_CACHE[report_id]["report_path"]
 
     if not Path(report_path).exists():
-        raise HTTPException(status_code=404, detail="Report file not found")
+        raise HTTPException(status_code=404, detail="리포트 파일을 찾을 수 없습니다.")
 
     return FileResponse(
         report_path,
@@ -220,7 +236,7 @@ async def download_report(report_id: str):
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "ok", "service": "PushGuardian Web Demo"}
+    return {"status": "ok", "service": "PushGuardian 웹 데모"}
 
 
 if __name__ == "__main__":

@@ -37,14 +37,14 @@ def detect_secrets(diff_text: str, secret_patterns: List[str]) -> List[Finding]:
                 findings.append(
                     Finding(
                         kind="secret",
-                        title=f"Secret pattern detected: {pattern}",
-                        detail=f"Line {line_num}: {line[:100]}...",
+                        title=f"시크릿 패턴 감지: {pattern}",
+                        detail=f"라인 {line_num}: {line[:100]}...",
                         confidence=1.0,
                         severity="critical",
                         fix_now=(
-                            "1. Remove the secret from code immediately\n"
-                            "2. Rotate/revoke the exposed credential\n"
-                            "3. Use environment variables or secret managers"
+                            "1. 코드에서 시크릿을 즉시 제거하세요\n"
+                            "2. 노출된 자격증명을 교체/폐기하세요\n"
+                            "3. 환경 변수나 시크릿 매니저를 사용하세요"
                         ),
                     )
                 )

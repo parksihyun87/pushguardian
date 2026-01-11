@@ -7,7 +7,8 @@ from typing import List, Set
 STACK_INDICATORS = {
     "react": {
         "extensions": [".jsx", ".tsx"],
-        "paths": ["components/", "hooks/", "pages/", "app/"],
+        # React 전용 폴더 패턴 위주로 한정하고, 일반적인 "app/" 는 제외하여 파이썬 앱 등에서의 오탐을 줄인다.
+        "paths": ["components/", "hooks/", "pages/"],
         "files": ["package.json", "next.config.js", "vite.config.ts"],
     },
     "typescript": {
@@ -43,7 +44,9 @@ STACK_INDICATORS = {
     },
     "nextjs": {
         "extensions": [".tsx", ".ts", ".jsx"],
-        "paths": ["app/", "pages/", "public/"],
+        # Next.js 프로젝트에서도 "app/" 폴더가 흔하지만, 다른 스택과 충돌을 줄이기 위해
+        # pages/public 위주로 감지하고, next.config.* 파일로 보완한다.
+        "paths": ["pages/", "public/"],
         "files": ["next.config.js", "next.config.mjs"],
     },
     "git": {
