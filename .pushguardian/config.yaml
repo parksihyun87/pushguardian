@@ -69,3 +69,9 @@ research:
 # UI 설정
 ui:
   show_markdown_in_terminal: true
+
+# Merge Conflict Detection (BETA)
+conflict_detection:
+  enabled: false  # 베타 기능: 기본 비활성화 (Web UI에서는 예시 선택 시 활성화)
+  base_branch: "origin/main"  # 비교 대상 브랜치
+  auto_fetch: false  # CLI 모드에서 자동 fetch 여부 (Web은 항상 false)

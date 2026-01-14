@@ -16,7 +16,7 @@ from .research.link_annotator import annotate_link_titles_with_llm
 from .research.naver_client import search_naver
 from .research.naver_filter import filter_naver_results
 from .research.naver_query_generator import generate_naver_query
-from .report.models import Finding, Evidence
+from .report.models import Finding, Evidence, ConflictWarning
 from .report.writer import generate_report_md, save_report
 import time
 
@@ -83,6 +83,11 @@ class GuardianState(TypedDict):
     human_approval_needed: bool  # 사람 승인 필요 여부
     human_decision: Literal["approve", "search_naver", "skip"] | None  # 사람의 결정
 
+    # Conflict detection (BETA)
+    base_diff: str | None  # origin/main의 diff
+    conflict_files: List[str]  # 양쪽에서 수정된 파일 목록
+    conflict_warnings: List[ConflictWarning]  # 충돌 경고
+
 # Node functions
 def load_config_node(state: GuardianState) -> GuardianState:
     """Load configuration."""
@@ -109,14 +114,31 @@ def load_config_node(state: GuardianState) -> GuardianState:
     state.setdefault("langsmith_url", None)
     state.setdefault("human_approval_needed", False)
     state.setdefault("human_decision", None)
+    state.setdefault("base_diff", None)
+    state.setdefault("conflict_files", [])
+    state.setdefault("conflict_warnings", [])
 
     # Now try to load config
     try:
         config = load_config()
+
+        # If initial_state already has config (e.g., from web UI override), merge it
+        if "config" in state and state["config"]:
+            # Merge: initial_state config overrides loaded config
+            existing_config = state["config"]
+            for key, value in existing_config.items():
+                if isinstance(value, dict) and key in config and isinstance(config[key], dict):
+                    # Merge nested dicts (e.g., conflict_detection)
+                    config[key] = {**config[key], **value}
+                else:
+                    config[key] = value
+
         state["config"] = config
     except Exception as e:
         state["errors"].append(f"Config load failed: {e}")
-        state["config"] = {}
+        # Check if initial_state provided config
+        if "config" not in state or not state["config"]:
+            state["config"] = {}
 
     return state
 
@@ -142,6 +164,127 @@ def scope_classify_node(state: GuardianState) -> GuardianState:
     state["weak_stack_touched"] = weak_touched
 
     return state
+
+
+def conflict_detect_node(state: GuardianState) -> GuardianState:
+    """Detect potential merge conflicts (BETA)."""
+    from .git_ops import fetch_base_branch, get_base_diff, detect_overlapping_files
+
+    config = state["config"]
+    conflict_config = config.get("conflict_detection", {})
+
+    # Check if conflict detection is enabled
+    if not conflict_config.get("enabled", False):
+        # Skip conflict detection
+        return state
+
+    repo_root = state.get("repo_root")
+    mode = state.get("mode", "web")
+
+    # In web mode, we need base_diff provided via special format
+    # In CLI mode, we can fetch it
+    if mode == "web":
+        # Web mode: check if diff_text has special format
+        diff_text = state["diff_text"]
+        if "=== MY DIFF ===" in diff_text and "=== BASE DIFF ===" in diff_text:
+            # Parse dual diff format
+            parts = diff_text.split("=== BASE DIFF ===")
+            my_diff_part = parts[0].replace("=== MY DIFF ===", "").strip()
+            base_diff_part = parts[1].strip() if len(parts) > 1 else ""
+
+            state["diff_text"] = my_diff_part  # Update to only my diff
+            state["base_diff"] = base_diff_part
+        else:
+            # No base diff provided, skip
+            return state
+    else:
+        # CLI mode: fetch base diff
+        if not repo_root:
+            return state
+
+        base_branch = conflict_config.get("base_branch", "origin/main")
+        auto_fetch = conflict_config.get("auto_fetch", False)
+
+        if auto_fetch:
+            fetch_base_branch(repo_root, base_branch)
+
+        base_diff = get_base_diff(repo_root, base_branch)
+        state["base_diff"] = base_diff
+
+    # Detect overlapping files
+    my_diff = state["diff_text"]
+    base_diff = state.get("base_diff", "")
+
+    if not base_diff:
+        return state
+
+    conflict_files = detect_overlapping_files(my_diff, base_diff)
+    state["conflict_files"] = conflict_files
+
+    print(f"🔍 충돌 감지: {len(conflict_files)}개 파일이 양쪽에서 수정됨")
+
+    return state
+
+
+def conflict_analyze_node(state: GuardianState) -> GuardianState:
+    """Analyze conflicts using LLM (BETA)."""
+    from .git_ops import parse_diff_hunks, check_line_overlap
+    from .llm.conflict_analyzer import analyze_conflict
+
+    conflict_files = state.get("conflict_files", [])
+    if not conflict_files:
+        return state
+
+    my_diff = state["diff_text"]
+    base_diff = state.get("base_diff", "")
+
+    # Parse hunks for both diffs
+    my_hunks = parse_diff_hunks(my_diff)
+    base_hunks = parse_diff_hunks(base_diff)
+
+    # Analyze each conflict file
+    warnings = []
+    for filepath in conflict_files[:5]:  # Limit to 5 files to avoid too many LLM calls
+        # Extract file-specific diffs
+        my_file_diff = extract_file_diff(my_diff, filepath)
+        base_file_diff = extract_file_diff(base_diff, filepath)
+
+        # Check line overlap
+        line_overlap = check_line_overlap(
+            my_hunks.get(filepath, []),
+            base_hunks.get(filepath, [])
+        )
+
+        # Analyze with LLM
+        try:
+            warning = analyze_conflict(filepath, my_file_diff, base_file_diff, line_overlap)
+            warnings.append(warning)
+            print(f"⚠️  {filepath}: {warning.conflict_probability*100:.0f}% 충돌 위험 ({warning.conflict_type})")
+        except Exception as e:
+            print(f"⚠️  {filepath}: 분석 실패 - {e}")
+
+    state["conflict_warnings"] = warnings
+
+    return state
+
+
+def extract_file_diff(full_diff: str, filepath: str) -> str:
+    """Extract diff for a specific file from full diff."""
+    lines = full_diff.split("\n")
+    result = []
+    in_file = False
+
+    for line in lines:
+        if line.startswith("diff --git") and filepath in line:
+            in_file = True
+            result.append(line)
+        elif line.startswith("diff --git") and in_file:
+            # Next file started
+            break
+        elif in_file:
+            result.append(line)
+
+    return "\n".join(result)
 
 
 def hard_policy_check_node(state: GuardianState) -> GuardianState:
@@ -655,6 +798,15 @@ def after_human_approval(state: GuardianState) -> Literal["naver", "write_report
     else:  # "approve" or "skip"
         return "write_report"
 
+
+def should_analyze_conflicts(state: GuardianState) -> Literal["analyze", "skip"]:
+    """충돌 파일이 있으면 분석, 없으면 skip."""
+    conflict_files = state.get("conflict_files", [])
+    if conflict_files:
+        return "analyze"
+    return "skip"
+
+
 # Build the graph
 def build_graph(checkpointer=None) -> StateGraph:
     """Build the LangGraph workflow with optional checkpointer for HITL."""
@@ -663,6 +815,8 @@ def build_graph(checkpointer=None) -> StateGraph:
     # Add nodes
     workflow.add_node("load_config", load_config_node)
     workflow.add_node("scope_classify", scope_classify_node)
+    workflow.add_node("conflict_detect", conflict_detect_node)  # NEW: Conflict detection
+    workflow.add_node("conflict_analyze", conflict_analyze_node)  # NEW: Conflict analysis
     workflow.add_node("hard_policy_check", hard_policy_check_node)
     workflow.add_node("soft_llm_judge", soft_llm_judge_node)
     workflow.add_node("research_tavily", research_tavily_node)
@@ -676,7 +830,19 @@ def build_graph(checkpointer=None) -> StateGraph:
     # Define edges
     workflow.set_entry_point("load_config")
     workflow.add_edge("load_config", "scope_classify")
-    workflow.add_edge("scope_classify", "hard_policy_check")
+    workflow.add_edge("scope_classify", "conflict_detect")  # Conflict detection first
+
+    # Conditional: if conflicts found, analyze them; else skip to hard policy check
+    workflow.add_conditional_edges(
+        "conflict_detect",
+        should_analyze_conflicts,
+        {
+            "analyze": "conflict_analyze",
+            "skip": "hard_policy_check"
+        }
+    )
+
+    workflow.add_edge("conflict_analyze", "hard_policy_check")  # After conflict analysis, continue to hard policy
     workflow.add_edge("hard_policy_check", "soft_llm_judge")
 
     # Conditional: research or skip
@@ -769,7 +935,6 @@ def run_guardian_stream(diff_text: str, mode: Literal["cli", "web"] = "cli", rep
             print(f"Running: {node_name}")
     """
     import os
-    from langsmith import traceable
 
     # Build graph with checkpointer if HITL is enabled
     if enable_hitl:
@@ -786,11 +951,12 @@ def run_guardian_stream(diff_text: str, mode: Literal["cli", "web"] = "cli", rep
         "repo_root": repo_root,
     }
 
-    # Set LangSmith project URL if tracing is enabled
+    # Set LangSmith trace URL if tracing is enabled
     langsmith_enabled = os.getenv("LANGCHAIN_TRACING_V2") == "true"
     if langsmith_enabled:
-        # Link to all projects page (since we don't have project UUID)
-        langsmith_url = "https://smith.langchain.com/projects"
+        project_name = os.getenv("LANGCHAIN_PROJECT", "default")
+        # Link to project page with filter for recent runs
+        langsmith_url = f"https://smith.langchain.com/o/default/projects/p/{project_name}"
     else:
         langsmith_url = None
 

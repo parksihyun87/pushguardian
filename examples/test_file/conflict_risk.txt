@@ -1,0 +1,27 @@
+=== MY DIFF ===
+diff --git a/src/routes/app.tsx b/src/routes/app.tsx
+index 1234567..abcdefg 100644
+--- a/src/routes/app.tsx
++++ b/src/routes/app.tsx
+@@ -10,6 +10,7 @@ import Dashboard from './pages/Dashboard';
+ const routes = [
+   { path: '/', component: Home },
+   { path: '/dashboard', component: Dashboard },
++  { path: '/profile', component: Profile },
+ ];
+
+ export default routes;
+
+=== BASE DIFF (origin/main) ===
+diff --git a/src/routes/app.tsx b/src/routes/app.tsx
+index 1234567..xyz9876 100644
+--- a/src/routes/app.tsx
++++ b/src/routes/app.tsx
+@@ -10,6 +10,7 @@ import Dashboard from './pages/Dashboard';
+ const routes = [
+   { path: '/', component: Home },
+   { path: '/dashboard', component: Dashboard },
++  { path: '/settings', component: Settings },
+ ];
+
+ export default routes;

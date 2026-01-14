@@ -130,3 +130,158 @@ def get_repo_root() -> str:
         raise RuntimeError("Not in a git repository")
 
     return result.stdout.strip()
+
+
+def fetch_base_branch(repo_root: str, base_branch: str) -> bool:
+    """
+    Fetch latest changes from base branch.
+
+    Args:
+        repo_root: Git repository root
+        base_branch: Branch to fetch (e.g., "origin/main")
+
+    Returns:
+        True if fetch succeeded, False otherwise
+    """
+    # Parse origin and branch name
+    if "/" in base_branch:
+        remote, branch = base_branch.split("/", 1)
+    else:
+        remote = "origin"
+        branch = base_branch
+
+    cmd = ["git", "fetch", remote, branch]
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, cwd=repo_root, encoding="utf-8"
+    )
+
+    return result.returncode == 0
+
+
+def get_merge_base(repo_root: str, base_branch: str, head_ref: str = "HEAD") -> Optional[str]:
+    """
+    Get the merge base (common ancestor) between HEAD and base branch.
+
+    Args:
+        repo_root: Git repository root
+        base_branch: Base branch (e.g., "origin/main")
+        head_ref: Current HEAD reference
+
+    Returns:
+        Merge base commit SHA, or None if not found
+    """
+    cmd = ["git", "merge-base", head_ref, base_branch]
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, cwd=repo_root, encoding="utf-8"
+    )
+
+    if result.returncode != 0:
+        return None
+
+    return result.stdout.strip()
+
+
+def get_base_diff(repo_root: str, base_branch: str) -> str:
+    """
+    Get diff from merge-base to base branch HEAD.
+    This shows changes that happened on base branch since we diverged.
+
+    Args:
+        repo_root: Git repository root
+        base_branch: Base branch (e.g., "origin/main")
+
+    Returns:
+        Diff text showing changes on base branch
+    """
+    # Get merge base
+    merge_base = get_merge_base(repo_root, base_branch)
+    if not merge_base:
+        return ""
+
+    # Get diff from merge-base to base branch HEAD
+    cmd = ["git", "diff", merge_base, base_branch]
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, cwd=repo_root, encoding="utf-8"
+    )
+
+    if result.returncode != 0:
+        return ""
+
+    return result.stdout
+
+
+def parse_diff_hunks(diff_text: str) -> dict[str, List[Tuple[int, int]]]:
+    """
+    Parse diff hunks to extract changed line ranges for each file.
+
+    Args:
+        diff_text: Git diff output
+
+    Returns:
+        Dictionary: {filepath: [(start_line, end_line), ...]}
+    """
+    hunks_by_file = {}
+    current_file = None
+
+    for line in diff_text.split("\n"):
+        # New file
+        if line.startswith("diff --git"):
+            parts = line.split()
+            if len(parts) >= 4:
+                current_file = parts[3][2:]  # Remove 'b/' prefix
+                hunks_by_file[current_file] = []
+
+        # Hunk header: @@ -10,7 +10,8 @@
+        elif line.startswith("@@") and current_file:
+            # Extract new file line range: +start,count
+            try:
+                parts = line.split("@@")[1].strip().split()
+                if len(parts) >= 2:
+                    new_range = parts[1]  # +10,8
+                    if new_range.startswith("+"):
+                        range_parts = new_range[1:].split(",")
+                        start = int(range_parts[0])
+                        count = int(range_parts[1]) if len(range_parts) > 1 else 1
+                        end = start + count - 1
+                        hunks_by_file[current_file].append((start, end))
+            except (ValueError, IndexError):
+                continue
+
+    return hunks_by_file
+
+
+def detect_overlapping_files(my_diff: str, base_diff: str) -> List[str]:
+    """
+    Detect files that were modified in both my branch and base branch.
+
+    Args:
+        my_diff: My branch's diff
+        base_diff: Base branch's diff
+
+    Returns:
+        List of file paths that were modified in both diffs
+    """
+    my_files = set(parse_changed_files(my_diff))
+    base_files = set(parse_changed_files(base_diff))
+
+    return list(my_files & base_files)
+
+
+def check_line_overlap(my_hunks: List[Tuple[int, int]], base_hunks: List[Tuple[int, int]]) -> bool:
+    """
+    Check if any line ranges overlap between two sets of hunks.
+
+    Args:
+        my_hunks: My changed line ranges
+        base_hunks: Base branch changed line ranges
+
+    Returns:
+        True if any overlap found
+    """
+    for my_start, my_end in my_hunks:
+        for base_start, base_end in base_hunks:
+            # Check overlap: [my_start, my_end] intersects [base_start, base_end]
+            if not (my_end < base_start or my_start > base_end):
+                return True
+
+    return False

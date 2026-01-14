@@ -5,6 +5,34 @@ from typing import Literal, List, Dict, Any
 
 
 @dataclass
+class ConflictWarning:
+    """Represents a potential merge conflict."""
+
+    file_path: str  # 충돌 발생 가능 파일
+    conflict_probability: float  # 0.0 to 1.0
+    conflict_type: Literal["routing", "config", "refactoring", "semantic_duplicate", "unknown"]
+    recommendation: Literal["keep_both", "choose_one", "manual_merge"]
+    advice_ko: str  # 한국어 조언
+    merge_suggestion_ko: str  # 병합 권장 방법
+    my_changes: str  # 내 diff
+    their_changes: str  # 상대방 diff
+    line_overlap: bool  # 라인 범위 겹침 여부
+
+    def to_dict(self):
+        return {
+            "file_path": self.file_path,
+            "conflict_probability": self.conflict_probability,
+            "conflict_type": self.conflict_type,
+            "recommendation": self.recommendation,
+            "advice_ko": self.advice_ko,
+            "merge_suggestion_ko": self.merge_suggestion_ko,
+            "my_changes": self.my_changes,
+            "their_changes": self.their_changes,
+            "line_overlap": self.line_overlap,
+        }
+
+
+@dataclass
 class Finding:
     """Represents a security or best-practice finding."""
 

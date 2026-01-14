@@ -25,6 +25,7 @@ EXAMPLE_FILES = {
     "🟡 낮은 위험 (코드 스타일/성능)": "examples/test_file/soft_low_style.txt",
     "📖 약점 스택 (학습 모드)": "examples/test_file/weak_stack_docker.txt",
     "✅ 깨끗한 코드 (통과 예시)": "examples/test_file/pass.txt",
+    "⚠️ (beta) 충돌 위험": "examples/test_file/conflict_risk.txt",
 }
 
 # Input method selection
@@ -49,6 +50,8 @@ if input_method == "Diff 텍스트 붙여넣기":
 
     # Load example file if selected
     example_content = ""
+    is_conflict_example = (example_choice == "⚠️ (beta) 충돌 위험")
+
     if example_choice != "-- 예시를 선택하세요 --":
         example_path = Path(EXAMPLE_FILES[example_choice])
         if example_path.exists():
@@ -56,13 +59,54 @@ if input_method == "Diff 텍스트 붙여넣기":
         else:
             st.warning(f"⚠️ 예제 파일을 찾을 수 없습니다: {example_path}")
 
-    diff_text = st.text_area(
-        "Git Diff 내용",
-        value=example_content,
-        height=300,
-        placeholder="여기에 git diff 출력 결과를 붙여 넣어 주세요...",
-        help="예: git diff HEAD~1 HEAD",
-    )
+    # Special UI for conflict example (dual diff input)
+    if is_conflict_example and example_content:
+        st.info("🧪 **beta 기능**: Merge Conflict 예측을 테스트합니다. 내 변경사항과 Main 브랜치 변경사항을 비교 분석합니다.")
+
+        # Parse example file into two parts
+        if "=== MY DIFF ===" in example_content and "=== BASE DIFF" in example_content:
+            # Split by any BASE DIFF marker (with or without "(origin/main)")
+            import re
+            parts = re.split(r"=== BASE DIFF[^\n]*===", example_content)
+            my_diff_example = parts[0].replace("=== MY DIFF ===", "").strip()
+            base_diff_example = parts[1].strip() if len(parts) > 1 else ""
+        else:
+            my_diff_example = example_content
+            base_diff_example = ""
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("### 📝 내 변경사항 (My Diff)")
+            my_diff = st.text_area(
+                "My Diff",
+                value=my_diff_example,
+                height=300,
+                label_visibility="collapsed"
+            )
+        with col2:
+            st.markdown("### 🌐 Main 브랜치 변경사항")
+            base_diff = st.text_area(
+                "Base Diff",
+                value=base_diff_example,
+                height=300,
+                label_visibility="collapsed"
+            )
+
+        # Combine into special format for backend
+        diff_text = f"=== MY DIFF ===\n{my_diff}\n\n=== BASE DIFF ===\n{base_diff}"
+
+        # Enable conflict detection for this analysis
+        st.session_state["enable_conflict_detection"] = True
+    else:
+        # Normal single diff input
+        diff_text = st.text_area(
+            "Git Diff 내용",
+            value=example_content,
+            height=300,
+            placeholder="여기에 git diff 출력 결과를 붙여 넣어 주세요...",
+            help="예: git diff HEAD~1 HEAD",
+        )
+        st.session_state["enable_conflict_detection"] = False
 elif input_method == "Git 레포 경로 지정 (로컬에서 커밋 분석)":
     st.info(
         "아직 원격(origin/main)으로 푸시되지 않은 커밋 범위 전체에 대한 diff를 자동으로 분석합니다. "
@@ -103,6 +147,8 @@ elif input_method == "Git 레포 경로 지정 (로컬에서 커밋 분석)":
 NODE_NAMES = {
     "load_config": "⚙️ 설정 로딩 중",
     "scope_classify": "🔍 파일 타입 및 스택 분류 중",
+    "conflict_detect": "⚠️ 충돌 감지 중 (beta)",
+    "conflict_analyze": "🔬 충돌 분석 중 (beta)",
     "hard_policy_check": "🚨 하드 보안 규칙 검사 중",
     "soft_llm_judge": "🤖 LLM 기반 보안 분석 중",
     "research_tavily": "🔎 Tavily로 보안 자료 검색 중",
@@ -275,6 +321,16 @@ elif st.button("🔍 Diff 분석하기", type="primary"):
                 "repo_root": None,
             }
 
+            # Enable conflict detection if flag is set
+            if st.session_state.get("enable_conflict_detection", False):
+                initial_state["config"] = {
+                    "conflict_detection": {
+                        "enabled": True,
+                        "base_branch": "origin/main",
+                        "auto_fetch": False
+                    }
+                }
+
             # Stream execution with progress updates
             interrupted = False
             for chunk in graph.stream(initial_state, config=config):
@@ -318,6 +374,14 @@ elif st.button("🔍 Diff 분석하기", type="primary"):
 # 결과 표시 (final_result가 있을 때)
 if "final_result" in st.session_state and st.session_state.final_result:
     state = st.session_state.final_result
+
+    # LangSmith URL이 없으면 다시 생성 (HITL 재개 후에는 없을 수 있음)
+    if "langsmith_url" not in state or not state["langsmith_url"]:
+        import os
+        langsmith_enabled = os.getenv("LANGCHAIN_TRACING_V2") == "true"
+        if langsmith_enabled:
+            project_name = os.getenv("LANGCHAIN_PROJECT", "default")
+            state["langsmith_url"] = f"https://smith.langchain.com/o/default/projects/p/{project_name}"
 
     # 디버깅: 현재 표시되는 상태의 링크 개수 확인
     if "evidence" in state:
@@ -378,6 +442,53 @@ if "final_result" in st.session_state and st.session_state.final_result:
     else:
         st.success("✅ 치명적인 보안 이슈가 감지되지 않았습니다!")
 
+    # Conflict Warnings Section (beta)
+    conflict_warnings = state.get("conflict_warnings", [])
+    if conflict_warnings:
+        st.divider()
+        st.subheader("⚠️ 병합 충돌 예측 (beta)")
+        st.info(
+            f"🔍 {len(conflict_warnings)}개 파일에서 병합 충돌 가능성이 감지되었습니다. "
+            "내 변경사항과 base branch 변경사항이 겹칩니다."
+        )
+
+        for i, warning in enumerate(conflict_warnings, 1):
+            # Conflict type emoji mapping
+            conflict_emoji = {
+                "routing": "🔀",
+                "config": "⚙️",
+                "refactoring": "🔧",
+                "semantic_duplicate": "📋",
+                "unknown": "❓"
+            }.get(warning.conflict_type, "⚠️")
+
+            # Conflict probability display
+            prob = warning.conflict_probability
+            prob_display = f"{prob:.0%}"
+            prob_badge = "🔴" if prob >= 0.7 else "🟠" if prob >= 0.4 else "🟡"
+
+            # Recommendation mapping
+            recommendation_ko = {
+                "keep_both": "양쪽 모두 유지",
+                "choose_one": "하나 선택",
+                "manual_merge": "수동 병합 필요"
+            }.get(warning.recommendation, warning.recommendation)
+
+            with st.expander(
+                f"{conflict_emoji} {warning.file_path} - {prob_badge} {prob_display}",
+                expanded=(i == 1)  # First one expanded
+            ):
+                st.markdown(f"**충돌 유형:** `{warning.conflict_type}`")
+                st.markdown(f"**충돌 확률:** {prob_display}")
+                st.markdown(f"**권장 조치:** {recommendation_ko}")
+                st.markdown(f"**라인 겹침:** {'예' if warning.line_overlap else '아니오'}")
+                st.markdown(f"\n**분석:**\n{warning.advice_ko}")
+
+                # Merge suggestion
+                st.markdown("---")
+                st.markdown("### 💡 권장 병합 방법")
+                st.markdown(warning.merge_suggestion_ko)
+
     # Weak Stack Learning Section (separate from findings)
     if state.get("weak_stack_touched") and state.get("learning_points"):
         st.divider()
@@ -404,7 +515,8 @@ if "final_result" in st.session_state and st.session_state.final_result:
         if state.get("langsmith_url"):
             st.markdown("### 🔗 LangSmith 디버깅 (개인용)")
             st.info("⚠️ LangSmith에서 상세 LangGraph 실행 로그를 확인할 수 있습니다. 본인 LangSmith 계정으로 로그인되어 있어야 합니다.")
-            st.markdown(f"[LangSmith Projects 열기]({state['langsmith_url']}) → 'pushguardian' 프로젝트 확인")
+            st.markdown(f"🔍 [LangSmith 프로젝트 보기]({state['langsmith_url']})")
+            st.caption("프로젝트 페이지에서 최근 실행 기록을 확인하세요. 가장 최신 trace가 방금 실행된 분석입니다.")
             st.divider()
 
         st.markdown("### 📊 리서치 요약")

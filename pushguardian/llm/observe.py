@@ -141,7 +141,11 @@ def validate_observation(
             "korean_content_sufficient": has_korean,  # Trigger HITL if no Korean content
             "notes": "Max research attempts reached (1 retry done), proceeding with available evidence",
         }
-        evidence.llm_observations.append(result)
+        evidence.llm_observations.append({
+            "iteration": recheck_count,
+            "model": "gpt-4o-mini (max attempts)",
+            **result
+        })
         return result
 
     # Use LLM to validate
