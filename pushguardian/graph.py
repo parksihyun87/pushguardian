@@ -243,6 +243,7 @@ def conflict_analyze_node(state: GuardianState) -> GuardianState:
     base_hunks = parse_diff_hunks(base_diff)
 
     # Analyze each conflict file
+    base_branch = state.get("config", {}).get("conflict_detection", {}).get("base_branch", "origin/main")
     warnings = []
     for filepath in conflict_files[:5]:  # Limit to 5 files to avoid too many LLM calls
         # Extract file-specific diffs
@@ -250,14 +251,21 @@ def conflict_analyze_node(state: GuardianState) -> GuardianState:
         base_file_diff = extract_file_diff(base_diff, filepath)
 
         # Check line overlap
-        line_overlap = check_line_overlap(
-            my_hunks.get(filepath, []),
-            base_hunks.get(filepath, [])
-        )
+        my_ranges = my_hunks.get(filepath, [])
+        base_ranges = base_hunks.get(filepath, [])
+        line_overlap = check_line_overlap(my_ranges, base_ranges)
 
         # Analyze with LLM
         try:
-            warning = analyze_conflict(filepath, my_file_diff, base_file_diff, line_overlap)
+            warning = analyze_conflict(
+                filepath,
+                my_file_diff,
+                base_file_diff,
+                line_overlap,
+                my_line_ranges=my_ranges,
+                base_line_ranges=base_ranges,
+                base_branch=base_branch,
+            )
             warnings.append(warning)
             print(f"⚠️  {filepath}: {warning.conflict_probability*100:.0f}% 충돌 위험 ({warning.conflict_type})")
         except Exception as e:

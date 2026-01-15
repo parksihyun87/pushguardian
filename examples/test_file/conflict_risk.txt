@@ -12,6 +12,19 @@ index 1234567..abcdefg 100644
 
  export default routes;
 
+diff --git a/src/utils/text.py b/src/utils/text.py
+index 1111111..2222222 100644
+--- a/src/utils/text.py
++++ b/src/utils/text.py
+@@ -1,6 +1,6 @@
+-from typing import List
++from typing import Iterable
+@@
+-def normalize_tags(tags: List[str]) -> str:
+-    return ",".join(tags)
++def normalize_tags(tags: Iterable[str]) -> str:
++    return ",".join(tags)
+
 === BASE DIFF (origin/main) ===
 diff --git a/src/routes/app.tsx b/src/routes/app.tsx
 index 1234567..xyz9876 100644
@@ -25,3 +38,16 @@ index 1234567..xyz9876 100644
  ];
 
  export default routes;
+
+diff --git a/src/utils/text.py b/src/utils/text.py
+index 1111111..3333333 100644
+--- a/src/utils/text.py
++++ b/src/utils/text.py
+@@ -1,6 +1,6 @@
+-from typing import List
++from typing import Sequence
+@@
+-def normalize_tags(tags: List[str]) -> str:
+-    return ",".join(tags)
++def normalize_tags(tags: Sequence[str]) -> str:
++    return ",".join(list(tags))
